@@ -5,7 +5,7 @@ from models import Image, User, Comment
 from flask import render_template, redirect, request, flash, get_flashed_messages, send_from_directory
 import random, hashlib, json, uuid, os
 from flask_login import login_user, logout_user, login_required, current_user
-from qiniu import Auth, put_file, etag
+from qiniu import Auth, put_data, etag
 import qiniu.config
 from qiniusdk import qiniu_upload_file
 
@@ -149,24 +149,21 @@ def save_to_local(file, file_name):
 
 
 def save_to_qiniu(file, file_name):
-    # access_key = app.config['QINIU_ACCESS_KEY']
-    # secret_key = app.config['QINIU_SECRET_KEY']
-    #
-    # q = Auth(access_key, secret_key)
-    # # 要上传的空间
-    # bucket_name = 'Bucket_Name'
-    # # 上传到七牛后保存的文件名
-    # key = 'my-python-logo.png'
-    # # 生成上传 Token，可以指定过期时间等
-    # token = q.upload_token(bucket_name, key, 3600)
-    # # 要上传文件的本地路径
-    # localfile = './sync/bbb.jpg'
-    # ret, info = put_file(token, key, localfile)
-    #
-    # print info
-    # assert ret['key'] == key
-    # assert ret['hash'] == etag(localfile)
-    return qiniu_upload_file(file, file_name)
+    access_key = app.config['QINIU_ACCESS_KEY']
+    secret_key = app.config['QINIU_SECRET_KEY']
+
+    q = Auth(access_key, secret_key)
+    # 要上传的空间
+    bucket_name = app.config['QINIU_BUCKET_NAME']
+    # 生成上传 Token，可以指定过期时间等
+    token = q.upload_token(bucket_name, file_name)
+
+    ret, info = put_data(token, file_name, file.stream)
+
+    print(type(info.status_code), info)
+    if info.status_code == 200:
+        return app.config['QINIU_DOMAIN'] + file_name
+    return None
 
 
 @app.route('/upload/', methods={"post"})
@@ -177,7 +174,8 @@ def upload():
         file_ext = file.filename.rsplit('.')[1].strip().lower()
     if file_ext in app.config['ALLOWED_EXT']:
         file_name = str(uuid.uuid1()).replace('-', '') + '.' + file_ext
-        url = save_to_local(file, file_name)
+        # url = save_to_local(file, file_name)
+        url = save_to_qiniu(file, file_name)
         if url != None:
             db.session.add(Image(url, current_user.id))
             db.session.commit()
